@@ -9,6 +9,12 @@ import type { AnswerGenerator } from "../ai/generate-answer.js";
 const NOTION_API_VERSION = "2026-03-11";
 const SOURCE_NAME = "Campus Virtual";
 
+// O Notion rejeita virgulas em opcoes de selecao. Nomes de disciplina vindos do
+// Moodle costumam te-las, entao a virgula vira hifen antes de virar opcao.
+export function selectOptionName(value: string): string {
+  return value.replace(/\s*,\s*/g, " - ").replace(/\s{2,}/g, " ").trim();
+}
+
 type NotionDestinationOptions = {
   token: string;
   dataSourceId: string;
@@ -112,7 +118,7 @@ function taskProperties(
     Prazo: { date: task.dueAt ? { start: task.dueAt } : null },
     Alerta: { select: { name: deadlineAlert(task, now, status) } },
     Disciplina: {
-      select: task.course ? { name: task.course } : null,
+      select: task.course ? { name: selectOptionName(task.course) } : null,
     },
     Descricao: {
       rich_text: task.description ? [{ text: { content: task.description.slice(0, 2000) } }] : [],
