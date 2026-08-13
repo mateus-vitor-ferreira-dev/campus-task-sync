@@ -18,14 +18,12 @@ test("remove o prefixo de datas e fica com a primeira oracao", () => {
   assert.equal(sectionLabel("05/09: Revisão para a prova"), "Revisão para a prova");
 });
 
-test("encurta nomes longos sem cortar palavra no meio", () => {
-  const label = sectionLabel(
-    "Apresentação da Disciplina, Plano de Curso, Metodologia de ensino e avaliação",
+test("encurta nomes longos sem deixar palavra pendurada no fim", () => {
+  assert.equal(
+    sectionLabel("Apresentação da Disciplina, Plano de Curso, Metodologia de ensino e avaliação"),
+    "Apresentação da Disciplina, Plano de Curso, Metodologia",
   );
-  assert.ok(label.length <= 60, `esperado no maximo 60 caracteres, veio ${label.length}`);
-  assert.ok(!label.endsWith(","), "nao deve terminar em pontuacao");
-  assert.ok(label.startsWith("Apresentação da Disciplina"));
-  assert.ok(!/\S$/.test(label) || label.split(" ").at(-1) !== "avaliaçã", "nao corta palavra ao meio");
+  assert.equal(sectionLabel("Introdução a Banco de Dados e a Modelagem Conceitual de Sistemas"), "Introdução a Banco de Dados e a Modelagem Conceitual");
 });
 
 test("preserva nomes que ja sao curtos e uteis", () => {
@@ -41,8 +39,22 @@ test("cai no rotulo padrao quando a secao nao tem nome", () => {
 
 test("prefixa com o indice real da secao, com dois digitos", () => {
   assert.equal(sectionFolderName({ sectionName: "General", sectionNumber: 0 }), "00 - Geral");
-  assert.equal(sectionFolderName({ sectionName: "Topic 5", sectionNumber: 5 }), "05 - Tópico 5");
-  assert.equal(sectionFolderName({ sectionName: "Topic 12", sectionNumber: 12 }), "12 - Tópico 12");
+  assert.equal(sectionFolderName({ sectionName: "Módulo 1", sectionNumber: 1 }), "01 - Módulo 1");
+  assert.equal(sectionFolderName({ sectionName: "Trabalho Final (TP)", sectionNumber: 18 }), "18 - Trabalho Final (TP)");
+});
+
+test("secao generica usa o indice, nao o numero que o professor escreveu", () => {
+  // GCC137 tem duas secoes chamadas "Topic 8", nos indices 8 e 11.
+  assert.equal(sectionFolderName({ sectionName: "Topic 8", sectionNumber: 8 }), "08 - Tópico");
+  assert.equal(sectionFolderName({ sectionName: "Topic 8", sectionNumber: 11 }), "11 - Tópico");
+  assert.notEqual(
+    sectionFolderName({ sectionName: "Topic 8", sectionNumber: 8 }),
+    sectionFolderName({ sectionName: "Topic 8", sectionNumber: 11 }),
+  );
+});
+
+test("nome real parecido com generico nao e confundido", () => {
+  assert.equal(sectionFolderName({ sectionName: "Tópicos Avançados", sectionNumber: 4 }), "04 - Tópicos Avançados");
 });
 
 test("dispensa o prefixo quando o Moodle nao informa a posicao", () => {

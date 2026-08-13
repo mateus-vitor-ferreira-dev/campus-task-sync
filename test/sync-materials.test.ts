@@ -106,7 +106,7 @@ test("nao cria pasta para disciplina sem material, sem link e sem data", async (
   assert.deepEqual(folders, [
     "root/Campus Virtual - 2026.2",
     "folder-1/GCC128 - Inteligência Artificial",
-    "folder-2/03 - Tópico 3",
+    "folder-2/03 - Tópico",
   ]);
   assert.equal(result.coursesSkipped, 1);
 });

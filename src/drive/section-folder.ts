@@ -27,11 +27,15 @@ function firstClause(value: string): string {
   return (head ?? value).trim();
 }
 
+/** Palavras que nao podem terminar o nome de uma pasta: ficam penduradas. */
+const TRAILING_STOP_WORDS = /(?:\s+(?:de|da|do|das|dos|e|em|no|na|nos|nas|a|o|as|os|para|por|com|ao|à|aos|às))+$/iu;
+
 function truncate(value: string): string {
   if (value.length <= MAXIMUM_LENGTH) return value;
   const cut = value.slice(0, MAXIMUM_LENGTH);
   const lastSpace = cut.lastIndexOf(" ");
-  return (lastSpace > MAXIMUM_LENGTH / 2 ? cut.slice(0, lastSpace) : cut).replace(/[\s,;:.\-]+$/u, "");
+  const trimmed = lastSpace > MAXIMUM_LENGTH / 2 ? cut.slice(0, lastSpace) : cut;
+  return trimmed.replace(/[\s,;:.\-]+$/u, "").replace(TRAILING_STOP_WORDS, "");
 }
 
 export function sectionLabel(rawName: string | undefined): string {
@@ -54,7 +58,12 @@ export function sectionLabel(rawName: string | undefined): string {
  * deixar as antigas orfas, com os arquivos divididos entre as duas.
  */
 export function sectionFolderName(section: { sectionName?: string; sectionNumber?: number }): string {
-  const label = sectionLabel(section.sectionName);
-  if (section.sectionNumber === undefined) return label;
+  if (section.sectionNumber === undefined) return sectionLabel(section.sectionName);
+  // O numero embutido num nome generico e do professor e nem sempre bate com a
+  // posicao da secao -- GCC137 tem duas secoes chamadas "Topic 8", nos indices
+  // 8 e 11. Como o rotulo generico nao informa nada, quem manda e o indice.
+  const label = GENERIC_SECTION.test((section.sectionName ?? "").trim())
+    ? "Tópico"
+    : sectionLabel(section.sectionName);
   return `${String(section.sectionNumber).padStart(2, "0")} - ${label}`;
 }
