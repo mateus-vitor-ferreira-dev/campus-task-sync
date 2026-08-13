@@ -135,7 +135,7 @@ test("aceita disciplina com virgula usando um rotulo valido no select", async ()
 
   const properties = body?.properties as Record<string, unknown>;
   assert.deepEqual(properties.Disciplina, {
-    select: { name: "Tópicos Especiais · Segurança e Redes" },
+    select: { name: "Tópicos Especiais - Segurança e Redes" },
   });
   const title = ((properties.Nome as { title: Array<{ text: { content: string } }> }).title[0]?.text.content);
   assert.equal(title, "Tópicos Especiais, Segurança e Redes — Atividade 1");

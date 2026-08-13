@@ -6,7 +6,7 @@ import { notionSelectValue } from "../src/notion/select-value.js";
 test("converte virgulas em separadores aceitos pelo select do Notion", () => {
   assert.equal(
     notionSelectValue("Tópicos Especiais, Segurança, Redes e Sistemas"),
-    "Tópicos Especiais · Segurança · Redes e Sistemas",
+    "Tópicos Especiais - Segurança - Redes e Sistemas",
   );
 });
 
