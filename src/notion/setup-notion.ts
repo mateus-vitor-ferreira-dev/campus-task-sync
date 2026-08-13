@@ -1,6 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 
-import { selectOptionName } from "./notion-destination.js";
+import { notionSelectValue } from "./select-value.js";
 
 const NOTION_API_VERSION = "2026-03-11";
 const SETUP_MARKER = "Painel configurado automaticamente pelo Campus Task Sync.";
@@ -118,7 +118,7 @@ export async function setupNotion(
     databaseId = parent.database_id;
   } else {
     const uniqueCourses = [
-      ...new Set(options.courses.filter(Boolean).map(selectOptionName)),
+      ...new Set(options.courses.filter(Boolean).map(notionSelectValue)),
     ].sort();
     const courseOptions = uniqueCourses.map((name, index) => ({
       name,
@@ -308,6 +308,12 @@ export async function setupNotion(
     const id = objectValue(properties?.[name])?.id;
     return typeof id === "string" ? decodeURIComponent(id) : undefined;
   };
+  const activeTasksFilter = {
+    and: [
+      { property: "Concluida", checkbox: { equals: false } },
+      { property: "Situacao", select: { does_not_equal: "Cancelada" } },
+    ],
+  };
   const tableView = existingViews.find((view) => view.type === "table");
   if (typeof tableView?.id === "string") {
     const visibleColumns = [
@@ -340,6 +346,8 @@ export async function setupNotion(
           ],
           frozen_column_index: 0,
         },
+        filter: activeTasksFilter,
+        sorts: [{ property: "Prazo", direction: "ascending" }],
       }),
     });
   }
@@ -364,7 +372,7 @@ export async function setupNotion(
   };
 
   if (typeof disciplineId === "string") {
-    await createView("Por disciplina", "board", {
+    const boardConfiguration = {
       configuration: {
         type: "board",
         group_by: {
@@ -375,22 +383,42 @@ export async function setupNotion(
         },
         card_layout: "compact",
       },
-    });
+      filter: activeTasksFilter,
+      sorts: [{ property: "Prazo", direction: "ascending" }],
+    };
+    const existingBoard = existingViews.find((view) => view.name === "Por disciplina");
+    if (typeof existingBoard?.id === "string") {
+      await request(`/views/${existingBoard.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(boardConfiguration),
+      });
+    } else {
+      await createView("Por disciplina", "board", boardConfiguration);
+    }
   }
   if (typeof deadlineId === "string") {
-    await createView("Calendario", "calendar", {
+    const calendarConfiguration = {
       configuration: { type: "calendar", date_property_id: deadlineId },
+      filter: activeTasksFilter,
       sorts: [{ property: "Prazo", direction: "ascending" }],
-    });
+    };
+    const existingCalendar = existingViews.find((view) => view.name === "Calendario");
+    if (typeof existingCalendar?.id === "string") {
+      await request(`/views/${existingCalendar.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(calendarConfiguration),
+      });
+    } else {
+      await createView("Calendario", "calendar", calendarConfiguration);
+    }
   }
   await createView("Pendentes", "list", {
-    filter: {
-      and: [
-        { property: "Concluida", checkbox: { equals: false } },
-        { property: "Situacao", select: { does_not_equal: "Cancelada" } },
-      ],
-    },
+    filter: activeTasksFilter,
     sorts: [{ property: "Prazo", direction: "ascending" }],
+  });
+  await createView("Arquivadas", "list", {
+    filter: { property: "Concluida", checkbox: { equals: true } },
+    sorts: [{ property: "Prazo", direction: "descending" }],
   });
 
   const users = await request("/users?page_size=100");
