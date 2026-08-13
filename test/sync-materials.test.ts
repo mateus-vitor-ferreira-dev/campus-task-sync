@@ -62,7 +62,7 @@ test("organiza materiais por disciplina e seção e cria guia de avaliações", 
     filesUnchanged: 0,
     filesFailed: 0,
     coursesSkipped: 0,
-    duplicatesSkipped: 0,
+    skipped: { duplicate: 0, genericSection: 0, oldSemester: 0, tooLarge: 0 },
   });
 });
 
@@ -148,6 +148,65 @@ test("ignora o mesmo arquivo republicado em outra atividade", async () => {
   });
 
   assert.deepEqual(uploaded, ["sobrevivencia-2016.pdf"]);
-  assert.equal(result.duplicatesSkipped, 1);
+  assert.equal(result.skipped.duplicate, 1);
   assert.equal(result.filesCreated, 1);
+});
+
+test("descarta seção sem nome, oferta anterior e arquivo grande demais", async () => {
+  const uploaded: string[] = [];
+  const attachment = (name: string, size: number) => ({
+    name,
+    apiUrl: `https://campus/webservice/pluginfile.php/${name}`,
+    mimeType: "application/pdf",
+    size,
+  });
+  const result = await syncMaterialsToDrive({
+    courses: [{ code: "GCC137", name: "Empreendedorismo", period: "2026/2" }],
+    importantDates: [],
+    skipGenericSections: true,
+    maximumFileBytes: 3 * 1024 * 1024,
+    moodle: {
+      async getActivities() {
+        return [
+          {
+            courseCode: "GCC137",
+            courseName: "Empreendedorismo",
+            moduleId: 1,
+            name: "Deposito",
+            sectionName: "Topic 8",
+            sectionNumber: 8,
+            attachments: [attachment("CasoDBACorp.pdf", 34_000)],
+          },
+          {
+            courseCode: "GCC137",
+            courseName: "Empreendedorismo",
+            moduleId: 2,
+            name: "Plano",
+            sectionName: "Geral",
+            sectionNumber: 0,
+            attachments: [
+              attachment("01_GCC137_Plano_de_Aula_2026s1.pdf", 239_000),
+              attachment("Sobrevivencia-empresas-sebrae_Final.pdf", 6 * 1024 * 1024),
+              attachment("Tp_Empreendedorismo_2026_2.pdf", 286_000),
+            ],
+          },
+        ];
+      },
+      async downloadAttachment() {
+        return new Uint8Array([1]);
+      },
+    },
+    drive: {
+      async getOrCreateFolder() {
+        return "folder";
+      },
+      async uploadFile(file) {
+        uploaded.push(file.name);
+        return "created";
+      },
+    },
+  });
+
+  assert.deepEqual(uploaded, ["Tp_Empreendedorismo_2026_2.pdf"]);
+  assert.deepEqual(result.skipped, { duplicate: 0, genericSection: 1, oldSemester: 1, tooLarge: 1 });
 });

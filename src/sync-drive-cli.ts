@@ -18,12 +18,17 @@ async function main(): Promise<void> {
   const courses = await moodle.getCurrentSemesterCourses();
   const auth = await authorizeDrive({ interactive: false });
   const drive = new GoogleDriveDestination(auth);
+  const maximumFileMb = Number(process.env.DRIVE_MAX_FILE_MB?.trim() || "8");
   const result = await syncMaterialsToDrive({
     moodle,
     drive,
     courses,
     importantDates: IMPORTANT_DATES_2026_2,
     rootFolderId: process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID?.trim() || undefined,
+    skipGenericSections: process.env.DRIVE_KEEP_GENERIC_SECTIONS?.trim() !== "true",
+    ...(Number.isFinite(maximumFileMb) && maximumFileMb > 0
+      ? { maximumFileBytes: maximumFileMb * 1024 * 1024 }
+      : {}),
   });
   console.log(JSON.stringify(result));
 }

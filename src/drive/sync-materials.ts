@@ -3,7 +3,8 @@ import { createHash } from "node:crypto";
 import type { MoodleActivity, MoodleCourseSummary } from "../moodle/client.js";
 import type { ImportantDate } from "../plans/semester-2026-2.js";
 import type { GoogleDriveDestination, UploadResult } from "./google-drive.js";
-import { sectionFolderName } from "./section-folder.js";
+import { isFromOtherSemester, parseSemester } from "./material-filter.js";
+import { isGenericSection, sectionFolderName } from "./section-folder.js";
 
 type MaterialSource = {
   getActivities(courseCodes: string[]): Promise<MoodleActivity[]>;
@@ -29,6 +30,10 @@ type Options = {
   importantDates: ImportantDate[];
   rootFolderId?: string;
   semester?: string;
+  /** Ignora as secoes sem nome, onde fica o material de apoio solto. */
+  skipGenericSections?: boolean;
+  /** Ignora anexo acima deste tamanho. */
+  maximumFileBytes?: number;
 };
 
 export type MaterialsSyncResult = {
@@ -40,8 +45,16 @@ export type MaterialsSyncResult = {
   filesFailed: number;
   /** Disciplinas sem material, sem link e sem data: nao ganham pasta. */
   coursesSkipped: number;
-  /** Anexos identicos republicados em atividades diferentes. */
-  duplicatesSkipped: number;
+  skipped: {
+    /** Anexos identicos republicados em atividades diferentes. */
+    duplicate: number;
+    /** Anexos em secao sem nome, o deposito de material de apoio. */
+    genericSection: number;
+    /** Nome do arquivo aponta para outra oferta ("..._2026s1.pdf"). */
+    oldSemester: number;
+    /** Acima do teto de tamanho. */
+    tooLarge: number;
+  };
 };
 
 function guideFor(course: MoodleCourseSummary, dates: ImportantDate[]): string {
@@ -89,7 +102,20 @@ export async function syncMaterialsToDrive(options: Options): Promise<MaterialsS
   let filesUnchanged = 0;
   let filesFailed = 0;
   let coursesSkipped = 0;
-  let duplicatesSkipped = 0;
+  const skipped = { duplicate: 0, genericSection: 0, oldSemester: 0, tooLarge: 0 };
+  const currentSemester = parseSemester(semester);
+  const maximumFileBytes = options.maximumFileBytes ?? Number.POSITIVE_INFINITY;
+
+  /** Motivo para nao guardar o anexo, ou undefined quando ele deve entrar. */
+  const reject = (
+    activity: MoodleActivity,
+    attachment: MoodleActivity["attachments"][number],
+  ): keyof typeof skipped | undefined => {
+    if (options.skipGenericSections && isGenericSection(activity.sectionName)) return "genericSection";
+    if (isFromOtherSemester(attachment.name, currentSemester)) return "oldSemester";
+    if ((attachment.size ?? 0) > maximumFileBytes) return "tooLarge";
+    return undefined;
+  };
 
   const count = (result: UploadResult): void => {
     if (result === "created") filesCreated += 1;
@@ -101,12 +127,19 @@ export async function syncMaterialsToDrive(options: Options): Promise<MaterialsS
     const courseActivities = activities.filter((item) => item.courseCode === course.code);
     const courseDates = options.importantDates.filter((date) => date.courseCode === course.code);
     const externalLinks = linksGuide(course, courseActivities);
-    const withFiles = courseActivities
-      .map((activity) => ({
-        activity,
-        attachments: activity.attachments.filter((_, index) => isCampusFile(activity, index)),
-      }))
-      .filter((entry) => entry.attachments.length > 0);
+    const withFiles: Array<{ activity: MoodleActivity; attachments: MoodleActivity["attachments"] }> = [];
+    for (const activity of courseActivities) {
+      const attachments = activity.attachments.filter((attachment, index) => {
+        if (!isCampusFile(activity, index)) return false;
+        const reason = reject(activity, attachment);
+        if (reason) {
+          skipped[reason] += 1;
+          return false;
+        }
+        return true;
+      });
+      if (attachments.length > 0) withFiles.push({ activity, attachments });
+    }
 
     // Sem arquivo, sem link e sem data nao ha o que guardar: criar a pasta so
     // encheria o Drive de disciplinas vazias.
@@ -148,7 +181,7 @@ export async function syncMaterialsToDrive(options: Options): Promise<MaterialsS
           // tem apiUrl propria, entao so o conteudo denuncia a repeticao.
           const contentHash = createHash("sha256").update(bytes).digest("hex");
           if (seenContent.has(contentHash)) {
-            duplicatesSkipped += 1;
+            skipped.duplicate += 1;
             continue;
           }
           seenContent.add(contentHash);
@@ -177,6 +210,6 @@ export async function syncMaterialsToDrive(options: Options): Promise<MaterialsS
     filesUnchanged,
     filesFailed,
     coursesSkipped,
-    duplicatesSkipped,
+    skipped,
   };
 }

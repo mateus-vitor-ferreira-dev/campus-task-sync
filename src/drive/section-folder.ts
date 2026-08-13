@@ -38,6 +38,16 @@ function truncate(value: string): string {
   return trimmed.replace(/[\s,;:.\-]+$/u, "").replace(TRAILING_STOP_WORDS, "");
 }
 
+/**
+ * Secao que o professor deixou com o rotulo padrao do Moodle, ou sem nome
+ * nenhum. Na pratica e o deposito da disciplina: material de apoio solto que
+ * nao pertence a nenhuma aula.
+ */
+export function isGenericSection(rawName: string | undefined): boolean {
+  const name = (rawName ?? "").replace(/\s+/g, " ").trim();
+  return name === "" || GENERIC_SECTION.test(name);
+}
+
 export function sectionLabel(rawName: string | undefined): string {
   const name = (rawName ?? "").replace(/\s+/g, " ").trim();
   if (!name) return "Materiais gerais";
