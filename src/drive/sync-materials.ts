@@ -1,6 +1,9 @@
+import { createHash } from "node:crypto";
+
 import type { MoodleActivity, MoodleCourseSummary } from "../moodle/client.js";
 import type { ImportantDate } from "../plans/semester-2026-2.js";
 import type { GoogleDriveDestination, UploadResult } from "./google-drive.js";
+import { sectionFolderName } from "./section-folder.js";
 
 type MaterialSource = {
   getActivities(courseCodes: string[]): Promise<MoodleActivity[]>;
@@ -35,6 +38,10 @@ export type MaterialsSyncResult = {
   filesUpdated: number;
   filesUnchanged: number;
   filesFailed: number;
+  /** Disciplinas sem material, sem link e sem data: nao ganham pasta. */
+  coursesSkipped: number;
+  /** Anexos identicos republicados em atividades diferentes. */
+  duplicatesSkipped: number;
 };
 
 function guideFor(course: MoodleCourseSummary, dates: ImportantDate[]): string {
@@ -55,10 +62,6 @@ function guideFor(course: MoodleCourseSummary, dates: ImportantDate[]): string {
     (rows || "Nenhuma avaliação com data disponível no plano de ensino atual.\n");
 }
 
-function sectionFolder(activity: MoodleActivity): string {
-  return activity.sectionName?.trim() || "Materiais gerais";
-}
-
 function isCampusFile(activity: MoodleActivity, index: number): boolean {
   return activity.attachments[index]?.apiUrl?.includes("/webservice/pluginfile.php/") === true;
 }
@@ -68,7 +71,7 @@ function linksGuide(course: MoodleCourseSummary, activities: MoodleActivity[]): 
     activity.attachments.flatMap((attachment, index) => {
       if (isCampusFile(activity, index)) return [];
       const url = attachment.browserUrl ?? attachment.apiUrl;
-      return url ? [`- [${attachment.name}](${url}) — ${sectionFolder(activity)}`] : [];
+      return url ? [`- [${attachment.name}](${url}) — ${sectionFolderName(activity)}`] : [];
     }),
   );
   if (links.length === 0) return undefined;
@@ -85,6 +88,8 @@ export async function syncMaterialsToDrive(options: Options): Promise<MaterialsS
   let filesUpdated = 0;
   let filesUnchanged = 0;
   let filesFailed = 0;
+  let coursesSkipped = 0;
+  let duplicatesSkipped = 0;
 
   const count = (result: UploadResult): void => {
     if (result === "created") filesCreated += 1;
@@ -93,20 +98,35 @@ export async function syncMaterialsToDrive(options: Options): Promise<MaterialsS
   };
 
   for (const course of options.courses) {
-    const courseFolderId = await options.drive.getOrCreateFolder(`${course.code} - ${course.name}`, rootFolderId);
-    const guide = Buffer.from(guideFor(course, options.importantDates), "utf8");
-    const guideResult = await options.drive.uploadFile({
-      name: "Guia de avaliações.md",
-      mimeType: "text/markdown",
-      bytes: guide,
-      parentId: courseFolderId,
-      sourceId: `guide:${semester}:${course.code}`,
-      courseCode: course.code,
-    });
-    count(guideResult);
-
     const courseActivities = activities.filter((item) => item.courseCode === course.code);
+    const courseDates = options.importantDates.filter((date) => date.courseCode === course.code);
     const externalLinks = linksGuide(course, courseActivities);
+    const withFiles = courseActivities
+      .map((activity) => ({
+        activity,
+        attachments: activity.attachments.filter((_, index) => isCampusFile(activity, index)),
+      }))
+      .filter((entry) => entry.attachments.length > 0);
+
+    // Sem arquivo, sem link e sem data nao ha o que guardar: criar a pasta so
+    // encheria o Drive de disciplinas vazias.
+    if (withFiles.length === 0 && !externalLinks && courseDates.length === 0) {
+      coursesSkipped += 1;
+      continue;
+    }
+
+    const courseFolderId = await options.drive.getOrCreateFolder(`${course.code} - ${course.name}`, rootFolderId);
+    if (courseDates.length > 0) {
+      count(await options.drive.uploadFile({
+        name: "Guia de avaliações.md",
+        mimeType: "text/markdown",
+        bytes: Buffer.from(guideFor(course, courseDates), "utf8"),
+        parentId: courseFolderId,
+        sourceId: `guide:${semester}:${course.code}`,
+        courseCode: course.code,
+      }));
+    }
+
     if (externalLinks) {
       count(await options.drive.uploadFile({
         name: "Links dos materiais.md",
@@ -118,13 +138,20 @@ export async function syncMaterialsToDrive(options: Options): Promise<MaterialsS
       }));
     }
 
-    for (const activity of courseActivities) {
-      const downloadable = activity.attachments.filter((_, index) => isCampusFile(activity, index));
-      if (downloadable.length === 0) continue;
-      const folderId = await options.drive.getOrCreateFolder(sectionFolder(activity), courseFolderId);
-      for (const attachment of downloadable) {
+    const seenContent = new Set<string>();
+    for (const { activity, attachments } of withFiles) {
+      const folderId = await options.drive.getOrCreateFolder(sectionFolderName(activity), courseFolderId);
+      for (const attachment of attachments) {
         try {
           const bytes = await options.moodle.downloadAttachment(attachment);
+          // O mesmo PDF costuma ser republicado em varias atividades; cada uma
+          // tem apiUrl propria, entao so o conteudo denuncia a repeticao.
+          const contentHash = createHash("sha256").update(bytes).digest("hex");
+          if (seenContent.has(contentHash)) {
+            duplicatesSkipped += 1;
+            continue;
+          }
+          seenContent.add(contentHash);
           const result = await options.drive.uploadFile({
             name: attachment.name,
             mimeType: attachment.mimeType ?? "application/octet-stream",
@@ -142,5 +169,14 @@ export async function syncMaterialsToDrive(options: Options): Promise<MaterialsS
       }
     }
   }
-  return { rootFolderId, activitiesFound: activities.length, filesCreated, filesUpdated, filesUnchanged, filesFailed };
+  return {
+    rootFolderId,
+    activitiesFound: activities.length,
+    filesCreated,
+    filesUpdated,
+    filesUnchanged,
+    filesFailed,
+    coursesSkipped,
+    duplicatesSkipped,
+  };
 }

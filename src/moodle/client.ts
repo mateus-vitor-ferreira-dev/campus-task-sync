@@ -16,6 +16,8 @@ export type MoodleActivity = {
   moduleId: number;
   name: string;
   sectionName?: string;
+  /** Posicao da secao no curso; usada para ordenar as pastas no Drive. */
+  sectionNumber?: number;
   url?: string;
   description?: string;
   opensAt?: string;
@@ -242,6 +244,7 @@ export class MoodleClient {
       for (const sectionValue of sections) {
         const section = objectValue(sectionValue);
         const sectionName = stringValue(section?.name);
+        const sectionNumber = numberValue(section?.section);
         for (const moduleValue of arrayValue(section?.modules)) {
           const module = objectValue(moduleValue);
           if (!module) continue;
@@ -279,6 +282,7 @@ export class MoodleClient {
             moduleId,
             name,
             ...(sectionName ? { sectionName } : {}),
+            ...(sectionNumber === undefined ? {} : { sectionNumber }),
             attachments,
             ...(stringValue(module?.url) ? { url: stringValue(module?.url) } : {}),
             ...(htmlToPlainText(stringValue(assignment?.intro) ?? stringValue(module?.description))
