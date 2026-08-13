@@ -50,11 +50,15 @@ export type MaterialsSyncResult = {
     duplicate: number;
     /** Anexos em secao sem nome, o deposito de material de apoio. */
     genericSection: number;
-    /** Nome do arquivo aponta para outra oferta ("..._2026s1.pdf"). */
-    oldSemester: number;
     /** Acima do teto de tamanho. */
     tooLarge: number;
   };
+  /**
+   * Anexos de outra oferta. Nao sao descartados: o professor nem sempre
+   * republica o material, e um plano de aula vencido ainda vale mais que
+   * nenhum. Entram com o prefixo de aviso no nome.
+   */
+  filesMarkedOldSemester: number;
 };
 
 function guideFor(course: MoodleCourseSummary, dates: ImportantDate[]): string {
@@ -74,6 +78,12 @@ function guideFor(course: MoodleCourseSummary, dates: ImportantDate[]): string {
     "Gerado a partir do plano de ensino. Confirme datas e alterações no Campus Virtual.\n\n" +
     (rows || "Nenhuma avaliação com data disponível no plano de ensino atual.\n");
 }
+
+/**
+ * Fica na frente do nome para aparecer na lista do Drive antes de o arquivo
+ * ser aberto, e para agrupar os vencidos na ordenacao alfabetica.
+ */
+const OLD_SEMESTER_PREFIX = "[oferta anterior] ";
 
 function isCampusFile(activity: MoodleActivity, index: number): boolean {
   return activity.attachments[index]?.apiUrl?.includes("/webservice/pluginfile.php/") === true;
@@ -102,7 +112,8 @@ export async function syncMaterialsToDrive(options: Options): Promise<MaterialsS
   let filesUnchanged = 0;
   let filesFailed = 0;
   let coursesSkipped = 0;
-  const skipped = { duplicate: 0, genericSection: 0, oldSemester: 0, tooLarge: 0 };
+  const skipped = { duplicate: 0, genericSection: 0, tooLarge: 0 };
+  let filesMarkedOldSemester = 0;
   const currentSemester = parseSemester(semester);
   const maximumFileBytes = options.maximumFileBytes ?? Number.POSITIVE_INFINITY;
 
@@ -112,7 +123,6 @@ export async function syncMaterialsToDrive(options: Options): Promise<MaterialsS
     attachment: MoodleActivity["attachments"][number],
   ): keyof typeof skipped | undefined => {
     if (options.skipGenericSections && isGenericSection(activity.sectionName)) return "genericSection";
-    if (isFromOtherSemester(attachment.name, currentSemester)) return "oldSemester";
     if ((attachment.size ?? 0) > maximumFileBytes) return "tooLarge";
     return undefined;
   };
@@ -185,8 +195,10 @@ export async function syncMaterialsToDrive(options: Options): Promise<MaterialsS
             continue;
           }
           seenContent.add(contentHash);
+          const fromOtherSemester = isFromOtherSemester(attachment.name, currentSemester);
+          if (fromOtherSemester) filesMarkedOldSemester += 1;
           const result = await options.drive.uploadFile({
-            name: attachment.name,
+            name: fromOtherSemester ? `${OLD_SEMESTER_PREFIX}${attachment.name}` : attachment.name,
             mimeType: attachment.mimeType ?? "application/octet-stream",
             bytes,
             parentId: folderId,
@@ -211,5 +223,6 @@ export async function syncMaterialsToDrive(options: Options): Promise<MaterialsS
     filesFailed,
     coursesSkipped,
     skipped,
+    filesMarkedOldSemester,
   };
 }

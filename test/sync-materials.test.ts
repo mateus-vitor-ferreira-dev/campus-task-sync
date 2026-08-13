@@ -62,7 +62,8 @@ test("organiza materiais por disciplina e seção e cria guia de avaliações", 
     filesUnchanged: 0,
     filesFailed: 0,
     coursesSkipped: 0,
-    skipped: { duplicate: 0, genericSection: 0, oldSemester: 0, tooLarge: 0 },
+    skipped: { duplicate: 0, genericSection: 0, tooLarge: 0 },
+    filesMarkedOldSemester: 0,
   });
 });
 
@@ -152,7 +153,7 @@ test("ignora o mesmo arquivo republicado em outra atividade", async () => {
   assert.equal(result.filesCreated, 1);
 });
 
-test("descarta seção sem nome, oferta anterior e arquivo grande demais", async () => {
+test("descarta seção sem nome e arquivo grande, mas marca a oferta anterior", async () => {
   const uploaded: string[] = [];
   const attachment = (name: string, size: number) => ({
     name,
@@ -192,8 +193,10 @@ test("descarta seção sem nome, oferta anterior e arquivo grande demais", async
           },
         ];
       },
-      async downloadAttachment() {
-        return new Uint8Array([1]);
+      // Conteudo distinto por arquivo, senao a deduplicacao por hash
+      // engoliria o segundo e o teste mediria a coisa errada.
+      async downloadAttachment(file) {
+        return new TextEncoder().encode(file.name);
       },
     },
     drive: {
@@ -207,6 +210,10 @@ test("descarta seção sem nome, oferta anterior e arquivo grande demais", async
     },
   });
 
-  assert.deepEqual(uploaded, ["Tp_Empreendedorismo_2026_2.pdf"]);
-  assert.deepEqual(result.skipped, { duplicate: 0, genericSection: 1, oldSemester: 1, tooLarge: 1 });
+  assert.deepEqual(uploaded, [
+    "[oferta anterior] 01_GCC137_Plano_de_Aula_2026s1.pdf",
+    "Tp_Empreendedorismo_2026_2.pdf",
+  ]);
+  assert.deepEqual(result.skipped, { duplicate: 0, genericSection: 1, tooLarge: 1 });
+  assert.equal(result.filesMarkedOldSemester, 1);
 });
