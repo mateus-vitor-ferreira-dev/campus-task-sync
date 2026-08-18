@@ -1,15 +1,11 @@
-export type ImportantDate = {
-  id: string;
-  courseCode: string;
-  courseName: string;
-  title: string;
-  type: "Atividade" | "Prova" | "Trabalho" | "Recuperação";
-  start: string;
-  end?: string;
-  weight?: number;
-  content?: string;
-  notes?: string;
-};
+import type { Assessment } from "../domain/assessment.js";
+
+/**
+ * Uma avaliacao transcrita do plano de ensino. E o mesmo registro que o painel
+ * recebe do Campus Virtual, menos a fonte -- que aqui e sempre o plano -- e com
+ * a data obrigatoria: um plano de ensino sem data nao serve para nada.
+ */
+export type ImportantDate = Omit<Assessment, "source" | "start"> & { start: string };
 
 export type PlannedAbsence = {
   courseCode: string;

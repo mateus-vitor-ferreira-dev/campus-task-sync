@@ -25,6 +25,7 @@ test("consulta atividades com datas, enunciado, link e anexos", async () => {
             id: 10,
             shortname: "GCC220-2026/2--10A-G010",
             fullname: "Metodologia de Pesquisa (10A) - PROFESSOR",
+            startdate: 1_784_775_600,
           },
         ]);
       case "mod_assign_get_assignments":
@@ -59,6 +60,7 @@ test("consulta atividades com datas, enunciado, link e anexos", async () => {
               {
                 id: 99,
                 name: "Atividade Avaliativa 1",
+                modname: "assign",
                 visible: 1,
                 url: "https://campusvirtual.ufla.br/presencial/mod/assign/view.php?id=99",
                 dates: [],
@@ -87,6 +89,7 @@ test("consulta atividades com datas, enunciado, link e anexos", async () => {
       courseCode: "GCC220",
       courseName: "Metodologia de Pesquisa",
       moduleId: 99,
+      moduleType: "assign",
       name: "Atividade Avaliativa 1",
       url: "https://campusvirtual.ufla.br/presencial/mod/assign/view.php?id=99",
       description: "Leia o artigo.\n\n- Responda às perguntas.",
@@ -103,14 +106,17 @@ test("consulta atividades com datas, enunciado, link e anexos", async () => {
             "https://campusvirtual.ufla.br/presencial/pluginfile.php/1/mod_assign/introattachment/0/artigo.pdf",
         },
       ],
+      courseStartsAt: "2026-07-23T03:00:00.000Z",
     },
     {
       courseCode: "GCC220",
       courseName: "Metodologia de Pesquisa",
       moduleId: 100,
+      moduleType: "questionnaire",
       name: "Escolha o artigo clicando aqui",
       url: "https://campusvirtual.ufla.br/presencial/mod/questionnaire/view.php?id=100",
       attachments: [],
+      courseStartsAt: "2026-07-23T03:00:00.000Z",
     },
   ]);
   assert.deepEqual(await client.downloadAttachment(activities[0]!.attachments[0]!),

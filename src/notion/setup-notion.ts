@@ -475,3 +475,10 @@ export async function setupNotion(
 
   return { databaseId, dataSourceId, created, viewsCreated, assigneeUserId };
 }
+
+export async function saveEnvAssessmentsDataSourceId(
+  dataSourceId: string,
+  envPath = ".env",
+): Promise<void> {
+  await saveEnvValue("NOTION_ASSESSMENTS_DATA_SOURCE_ID", dataSourceId, envPath);
+}

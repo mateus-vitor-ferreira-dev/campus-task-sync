@@ -18,9 +18,13 @@ test("cria painel idempotente e destaca avaliação durante a viagem", async () 
     return Response.json({ id: "ok" });
   };
 
+  const saved: string[] = [];
   const result = await setupImportantDatesPanel({
     token: "token",
     parentPageId: "page-1",
+    saveDataSourceId: async (dataSourceId) => {
+      saved.push(dataSourceId);
+    },
     travel: { start: "2026-10-12", end: "2026-10-24" },
     dates: [{
       id: "event-1",

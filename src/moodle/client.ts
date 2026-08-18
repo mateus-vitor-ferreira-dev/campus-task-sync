@@ -14,6 +14,8 @@ export type MoodleActivity = {
   courseCode: string;
   courseName: string;
   moduleId: number;
+  /** Tipo do modulo no Moodle: `assign`, `quiz`, `resource`, `url`... */
+  moduleType?: string;
   name: string;
   sectionName?: string;
   /** Posicao da secao no curso; usada para ordenar as pastas no Drive. */
@@ -23,12 +25,19 @@ export type MoodleActivity = {
   opensAt?: string;
   dueAt?: string;
   attachments: TaskAttachment[];
+  /**
+   * Inicio da oferta atual. As disciplinas sao restauradas de uma copia do
+   * semestre anterior e as entregas antigas vem junto, com as datas antigas;
+   * comparar com este marco e o que separa uma da outra.
+   */
+  courseStartsAt?: string;
 };
 
 type MoodleCourse = {
   id: number;
   shortname: string;
   fullname: string;
+  startdate?: number;
 };
 
 export type MoodleCourseSummary = {
@@ -183,7 +192,10 @@ export class MoodleClient {
       const id = numberValue(course?.id);
       const shortname = stringValue(course?.shortname);
       const fullname = stringValue(course?.fullname);
-      return id && shortname && fullname ? [{ id, shortname, fullname }] : [];
+      const startdate = numberValue(course?.startdate);
+      return id && shortname && fullname
+        ? [{ id, shortname, fullname, ...(startdate ? { startdate } : {}) }]
+        : [];
     });
   }
 
@@ -280,6 +292,7 @@ export class MoodleClient {
             courseCode: code,
             courseName: courseDisplayName(course),
             moduleId,
+            ...(stringValue(module?.modname) ? { moduleType: stringValue(module?.modname) } : {}),
             name,
             ...(sectionName ? { sectionName } : {}),
             ...(sectionNumber === undefined ? {} : { sectionNumber }),
@@ -294,6 +307,7 @@ export class MoodleClient {
               : {}),
             ...(opensAt ? { opensAt } : {}),
             ...(dueAt ? { dueAt } : {}),
+            ...(timestampIso(course.startdate) ? { courseStartsAt: timestampIso(course.startdate) } : {}),
           });
         }
       }

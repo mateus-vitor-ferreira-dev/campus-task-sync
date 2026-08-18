@@ -1,16 +1,22 @@
+import type { Assessment } from "../domain/assessment.js";
 import type { ImportantDate } from "../plans/semester-2026-2.js";
-import { notionSelectValue } from "./select-value.js";
+import { upsertAssessments, type TravelPeriod } from "./assessments-panel.js";
+import { saveEnvAssessmentsDataSourceId } from "./setup-notion.js";
 
 const NOTION_API_VERSION = "2026-03-11";
-const DATABASE_TITLE = "Datas Importantes";
+const DATABASE_TITLE = "Provas e Trabalhos";
 type JsonObject = Record<string, unknown>;
 
 type Options = {
   token: string;
   parentPageId: string;
+  /** Provas e trabalhos transcritos do plano de ensino do SIG. */
   dates: ImportantDate[];
-  travel: { start: string; end: string };
+  /** Entregas avaliativas lidas do Campus Virtual, ja classificadas. */
+  campusAssessments?: Assessment[];
+  travel: TravelPeriod;
   fetcher?: typeof fetch;
+  saveDataSourceId?: (dataSourceId: string) => Promise<void>;
 };
 
 export type ImportantDatesResult = {
@@ -19,6 +25,7 @@ export type ImportantDatesResult = {
   created: boolean;
   entriesCreated: number;
   entriesUpdated: number;
+  entriesArchived: number;
 };
 
 function objectValue(value: unknown): JsonObject | undefined {
@@ -27,34 +34,6 @@ function objectValue(value: unknown): JsonObject | undefined {
 
 function arrayValue(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
-}
-
-function richTextValue(property: unknown): string | undefined {
-  const text = arrayValue(objectValue(property)?.rich_text)
-    .map((item) => objectValue(item)?.plain_text)
-    .filter((item): item is string => typeof item === "string")
-    .join("");
-  return text || undefined;
-}
-
-function overlapsTravel(date: ImportantDate, travel: Options["travel"]): boolean {
-  return date.start <= travel.end && (date.end ?? date.start) >= travel.start;
-}
-
-function propertiesFor(date: ImportantDate, travel: Options["travel"]): JsonObject {
-  const duringTravel = overlapsTravel(date, travel);
-  return {
-    Evento: { title: [{ text: { content: date.title } }] },
-    Disciplina: { select: { name: notionSelectValue(date.courseName) } },
-    Data: { date: { start: date.start, ...(date.end ? { end: date.end } : {}) } },
-    Tipo: { select: { name: date.type } },
-    Peso: date.weight === undefined ? { number: null } : { number: date.weight },
-    Conteúdo: { rich_text: date.content ? [{ text: { content: date.content } }] : [] },
-    Observações: { rich_text: date.notes ? [{ text: { content: date.notes } }] : [] },
-    Viagem: { select: { name: duringTravel ? "✈️ Durante a viagem" : "Sem conflito" } },
-    Fonte: { select: { name: "Plano de ensino" } },
-    "ID externo": { rich_text: [{ text: { content: date.id } }] },
-  };
 }
 
 export async function setupImportantDatesPanel(options: Options): Promise<ImportantDatesResult> {
@@ -71,7 +50,7 @@ export async function setupImportantDatesPanel(options: Options): Promise<Import
     });
     if (!response.ok) {
       const details = (await response.text()).slice(0, 800);
-      throw new Error(`Falha ao configurar datas importantes (HTTP ${response.status}): ${details}`);
+      throw new Error(`Falha ao configurar o painel de provas e trabalhos (HTTP ${response.status}): ${details}`);
     }
     return (await response.json()) as JsonObject;
   };
@@ -99,7 +78,7 @@ export async function setupImportantDatesPanel(options: Options): Promise<Import
       body: JSON.stringify({
         parent: { type: "page_id", page_id: options.parentPageId },
         title: [{ type: "text", text: { content: DATABASE_TITLE } }],
-        description: [{ type: "text", text: { content: "Provas, trabalhos e atividades previstas nos planos de ensino. Confirme alterações no Campus Virtual." } }],
+        description: [{ type: "text", text: { content: "Provas, trabalhos e atividades avaliativas. As entregas online vêm do Campus Virtual a cada sincronização; as provas presenciais vêm do plano de ensino." } }],
         icon: { type: "emoji", emoji: "🗓️" },
         is_inline: true,
         initial_data_source: {
@@ -125,7 +104,11 @@ export async function setupImportantDatesPanel(options: Options): Promise<Import
               { name: "✈️ Durante a viagem", color: "red" },
               { name: "Sem conflito", color: "green" },
             ] } },
-            Fonte: { select: { options: [{ name: "Plano de ensino", color: "gray" }] } },
+            Link: { url: {} },
+            Fonte: { select: { options: [
+              { name: "Campus Virtual", color: "blue" },
+              { name: "Plano de ensino", color: "gray" },
+            ] } },
             "ID externo": { rich_text: {} },
           },
         },
@@ -141,43 +124,22 @@ export async function setupImportantDatesPanel(options: Options): Promise<Import
   if (typeof source?.id !== "string") throw new Error("O Notion não retornou a fonte de dados do painel de datas.");
   const dataSourceId = source.id;
 
-  const existing = new Map<string, string>();
-  cursor = undefined;
-  do {
-    const pages = await request(`/data_sources/${dataSourceId}/query`, {
-      method: "POST",
-      body: JSON.stringify({ ...(cursor ? { start_cursor: cursor } : {}) }),
-    });
-    for (const value of arrayValue(pages.results)) {
-      const page = objectValue(value);
-      const properties = objectValue(page?.properties);
-      const id = richTextValue(properties?.["ID externo"]);
-      if (id && typeof page?.id === "string") existing.set(id, page.id);
-    }
-    cursor = typeof pages.next_cursor === "string" ? pages.next_cursor : undefined;
-  } while (cursor);
+  // Gravado sempre, e nao so na criacao: e assim que o `npm run sync` acha o
+  // painel para atualizar as entregas do Campus a cada meia hora.
+  await (options.saveDataSourceId ?? saveEnvAssessmentsDataSourceId)(dataSourceId);
 
-  let entriesCreated = 0;
-  let entriesUpdated = 0;
-  for (const date of options.dates) {
-    const pageId = existing.get(date.id);
-    if (pageId) {
-      await request(`/pages/${pageId}`, {
-        method: "PATCH",
-        body: JSON.stringify({ properties: propertiesFor(date, options.travel) }),
-      });
-      entriesUpdated += 1;
-    } else {
-      await request("/pages", {
-        method: "POST",
-        body: JSON.stringify({
-          parent: { type: "data_source_id", data_source_id: dataSourceId },
-          properties: propertiesFor(date, options.travel),
-        }),
-      });
-      entriesCreated += 1;
-    }
-  }
+  const entries: Assessment[] = [
+    ...options.dates.map((date) => ({ ...date, source: "Plano de ensino" as const })),
+    ...(options.campusAssessments ?? []),
+  ];
+  const upsert = await upsertAssessments({
+    token: options.token,
+    dataSourceId,
+    entries,
+    travel: options.travel,
+    pruneCampusEntries: options.campusAssessments !== undefined,
+    fetcher: options.fetcher,
+  });
 
   const details = await request(`/data_sources/${dataSourceId}`);
   const properties = objectValue(details.properties);
@@ -197,8 +159,8 @@ export async function setupImportantDatesPanel(options: Options): Promise<Import
   const table = existingViews.find((view) => view.type === "table");
   if (typeof table?.id === "string") {
     const columns: Array<[string, number]> = [
-      ["Disciplina", 260], ["Evento", 300], ["Data", 190], ["Tipo", 120], ["Peso", 90],
-      ["Viagem", 180], ["Conteúdo", 360], ["Observações", 420],
+      ["Data", 190], ["Disciplina", 260], ["Evento", 320], ["Tipo", 120], ["Peso", 90],
+      ["Fonte", 140], ["Link", 120], ["Conteúdo", 300], ["Observações", 320],
     ];
     await request(`/views/${table.id}`, {
       method: "PATCH",
@@ -210,7 +172,7 @@ export async function setupImportantDatesPanel(options: Options): Promise<Import
               const id = propertyId(name);
               return id ? [{ property_id: id, visible: true, width }] : [];
             }),
-            ...["Fonte", "ID externo"].flatMap((name) => {
+            ...["Viagem", "ID externo"].flatMap((name) => {
               const id = propertyId(name);
               return id ? [{ property_id: id, visible: false }] : [];
             }),
@@ -236,5 +198,12 @@ export async function setupImportantDatesPanel(options: Options): Promise<Import
     });
   }
 
-  return { databaseId, dataSourceId, created, entriesCreated, entriesUpdated };
+  return {
+    databaseId,
+    dataSourceId,
+    created,
+    entriesCreated: upsert.created,
+    entriesUpdated: upsert.updated,
+    entriesArchived: upsert.archived,
+  };
 }

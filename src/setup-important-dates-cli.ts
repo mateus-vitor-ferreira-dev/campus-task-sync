@@ -1,6 +1,7 @@
 import "dotenv/config";
 
 import { loadNotionSetupConfig } from "./config.js";
+import { assessmentsFromActivities } from "./domain/assessment.js";
 import { MoodleClient } from "./moodle/client.js";
 import { markPlannedAbsences } from "./notion/mark-planned-absences.js";
 import { setupAttendancePanel } from "./notion/setup-attendance.js";
@@ -19,10 +20,15 @@ async function main(): Promise<void> {
     parentPageId,
     courses: courses.map((course) => ({ ...course, credits: COURSE_CREDITS_2026_2[course.code] })),
   });
+  // O painel ja nasce com o que o Campus publica; o plano de ensino entra por
+  // cima, sem se sobrepor, porque os ids das duas fontes nao se cruzam.
+  const activities = await moodle.getActivities(courses.map((course) => course.code));
+  const { assessments, previousOffering } = assessmentsFromActivities(activities);
   const result = await setupImportantDatesPanel({
     token: config.notionToken,
     parentPageId,
     dates: IMPORTANT_DATES_2026_2,
+    campusAssessments: assessments,
     travel: TRAVEL_PERIOD,
   });
   const attendanceRowsUpdated = await markPlannedAbsences({
@@ -30,7 +36,14 @@ async function main(): Promise<void> {
     dataSourceId: attendance.dataSourceId,
     absences: PLANNED_ABSENCES_2026_2,
   });
-  console.log(JSON.stringify({ ...result, attendanceDataSourceId: attendance.dataSourceId, attendanceRowsUpdated }));
+  console.log(
+    JSON.stringify({
+      ...result,
+      assessmentsFromPreviousOffering: previousOffering,
+      attendanceDataSourceId: attendance.dataSourceId,
+      attendanceRowsUpdated,
+    }),
+  );
 }
 
 main().catch((error: unknown) => {

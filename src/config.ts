@@ -7,6 +7,8 @@ export type AppConfig = BaseConfig & {
   notionToken: string;
   notionDataSourceId: string;
   notionAssigneeUserId?: string;
+  /** Painel "Provas e Trabalhos"; sem ele o sync nao atualiza as avaliacoes. */
+  notionAssessmentsDataSourceId?: string;
   openAiApiKey?: string;
   openAiModel: string;
   openAiSuggestionsEnabled: boolean;
@@ -37,6 +39,7 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     notionToken: required("NOTION_TOKEN", env),
     notionDataSourceId: required("NOTION_DATA_SOURCE_ID", env),
     notionAssigneeUserId: env.NOTION_ASSIGNEE_USER_ID?.trim() || undefined,
+    notionAssessmentsDataSourceId: env.NOTION_ASSESSMENTS_DATA_SOURCE_ID?.trim() || undefined,
     openAiApiKey: env.OPENAI_API_KEY?.trim() || undefined,
     openAiModel: env.OPENAI_MODEL?.trim() || "gpt-5.6-terra",
     openAiSuggestionsEnabled: /^(1|true|yes)$/i.test(

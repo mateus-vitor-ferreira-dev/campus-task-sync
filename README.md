@@ -12,6 +12,7 @@ Actions.
 - une eventos de abertura e encerramento da mesma atividade;
 - consulta abertura, prazo, enunciado, link e anexos pela API do Moodle;
 - separa as tarefas por disciplina e mostra alertas de prazo;
+- reúne provas, trabalhos e atividades avaliativas num painel próprio;
 - retira tarefas concluídas das visões ativas e as mantém em `Arquivadas`;
 - permite desarquivar uma tarefa desmarcando `Concluída`;
 - envia notificações do Notion para novas tarefas atribuídas;
@@ -191,18 +192,71 @@ em `COURSE_CREDITS_2026_2` (`src/plans/semester-2026-2.ts`).
 Executá-lo novamente não duplica disciplinas e não mexe nos dias faltados;
 apenas grava os créditos que estiverem no mapa acima.
 
-## Datas importantes e planos de ensino
+## Provas e trabalhos
 
-O comando abaixo **não é genérico neste momento**:
+O painel `Provas e Trabalhos` reúne, numa base só, tudo o que vale nota — com
+disciplina, data, tipo e peso. Ele é criado por:
 
 ```bash
 npm run setup:important-dates
 ```
 
-Ele contém os planos de ensino de GCC128, GCC175 e GCC220 de 2026/2 e as datas
-de uma viagem específica do autor do projeto. Outro usuário não deve executá-lo
-sem antes substituir os dados em `src/plans/semester-2026-2.ts` pelos próprios
-planos, avaliações e ausências planejadas.
+O comando grava `NOTION_ASSESSMENTS_DATA_SOURCE_ID` no `.env`. A partir daí,
+cada `npm run sync` mantém o painel em dia junto com as tarefas.
+
+### As duas fontes
+
+O painel bebe de duas fontes, que convivem sem se sobrepor porque os
+identificadores não se cruzam:
+
+| Fonte | O que traz | Atualização |
+| --- | --- | --- |
+| Campus Virtual | entregas online: `assign`, `quiz`, `wiki`, `workshop` | automática, a cada sincronização |
+| Plano de ensino | provas presenciais, pesos e conteúdo | manual, em `src/plans/semester-2026-2.ts` |
+
+A segunda fonte não é enfeite: **prova presencial não existe no Moodle**. Uma
+disciplina cuja avaliação é toda em sala não publica atividade nenhuma no
+Campus e fica sem uma única linha no painel até o plano de ensino ser
+transcrito para `IMPORTANT_DATES_2026_2`.
+
+### Como o tipo é decidido
+
+O título manda, e o tipo do módulo só decide quando o título não diz nada — o
+professor escolhe o módulo por conveniência, então uma prova aplicada em sala
+costuma virar um `assign` de envio da foto:
+
+| Sinal no título | Tipo |
+| --- | --- |
+| `recuperação`, `segunda chamada`, `substitutiva` | `Recuperação` |
+| `prova`, `exame`, `P1`, `P2`, `avaliação escrita/presencial` | `Prova` |
+| `trabalho`, `seminário`, `projeto`, `lista`, `entrega`, `exercício`, ... | `Trabalho` |
+| nada disso, módulo `assign`/`wiki`/`workshop` | `Trabalho` |
+| nada disso, módulo `quiz` | `Atividade` |
+
+### Oferta anterior
+
+As disciplinas são restauradas de uma cópia do semestre passado e as entregas
+antigas vêm junto, com as datas antigas. O painel descarta o que tem data
+anterior ao início da oferta atual e informa quantas foram, no campo
+`assessmentsFromPreviousOffering` da saída do sync. Se o professor reabrir a
+atividade com data nova, ela volta sozinha na sincronização seguinte.
+
+### Transcrever um plano de ensino
+
+Preencha `IMPORTANT_DATES_2026_2` em `src/plans/semester-2026-2.ts`:
+
+```ts
+{
+  id: "gcc129-prova-1",        // qualquer id estável que não comece com "campus:"
+  courseCode: "GCC129",
+  courseName: "Sistemas Distribuídos",
+  title: "Prova 1",
+  type: "Prova",
+  start: "2026-09-24",
+  weight: 30,
+  content: "Relógios lógicos, exclusão mútua distribuída",
+}
+```
 
 As datas dos planos são tratadas como previsões. O prazo publicado no Campus
 Virtual continua sendo a referência final.
@@ -294,6 +348,12 @@ Opcional para notificações por atribuição:
 | --- | --- |
 | `NOTION_ASSIGNEE_USER_ID` | salvo no `.env` pelo setup, quando disponível |
 
+Opcional para manter o painel de provas e trabalhos atualizado:
+
+| Secret | Origem |
+| --- | --- |
+| `NOTION_ASSESSMENTS_DATA_SOURCE_ID` | gravado por `npm run setup:important-dates` |
+
 Opcionais para o Drive:
 
 | Secret | Origem |
@@ -321,6 +381,7 @@ copiados nem disponibilizados para forks.
 | `NOTION_TOKEN` | para Notion | autenticação da integração |
 | `NOTION_PARENT_PAGE_URL` | para setup | página onde os painéis serão criados |
 | `NOTION_DATA_SOURCE_ID` | para sync | base criada pelo setup |
+| `NOTION_ASSESSMENTS_DATA_SOURCE_ID` | não | painel de provas e trabalhos |
 | `NOTION_ASSIGNEE_USER_ID` | não | notificações por atribuição |
 | `GOOGLE_DRIVE_CREDENTIALS_PATH` | não | caminho do JSON OAuth local |
 | `GOOGLE_DRIVE_TOKEN_PATH` | não | caminho do token OAuth local |
@@ -341,7 +402,7 @@ reais.
 | `npm run setup:notion` | cria ou atualiza o painel de tarefas |
 | `npm run sync` | sincroniza Campus → Notion |
 | `npm run setup:attendance` | cria ou atualiza o controle de faltas |
-| `npm run setup:important-dates` | importa a personalização de planos de 2026/2 |
+| `npm run setup:important-dates` | cria o painel de provas e trabalhos |
 | `npm run setup:drive` | autoriza o Google Drive |
 | `npm run sync:drive` | sincroniza materiais com o Drive |
 | `npm run check` | executa tipagem e testes |
