@@ -161,6 +161,7 @@ export async function setupNotion(
             },
             Responsavel: { people: {} },
             Disciplina: { select: { options: courseOptions } },
+            Codigo: { rich_text: {} },
             Descricao: { rich_text: {} },
             "Sugestão de resposta": { rich_text: {} },
             Link: { url: {} },
@@ -262,6 +263,9 @@ export async function setupNotion(
     missingProperties["Sugestão de resposta"] = { rich_text: {} };
   }
   if (!properties?.Responsavel) missingProperties.Responsavel = { people: {} };
+  // O codigo da disciplina (GAC111) e mais curto que o nome para filtrar, e o
+  // sync ja o tinha em maos desde o calendario -- so nunca gravava.
+  if (!properties?.Codigo) missingProperties.Codigo = { rich_text: {} };
   if (!properties?.Alerta) {
     missingProperties.Alerta = {
       select: {
@@ -317,16 +321,17 @@ export async function setupNotion(
   const tableView = existingViews.find((view) => view.type === "table");
   if (typeof tableView?.id === "string") {
     const visibleColumns = [
-      ["Disciplina", 220],
-      ["Nome", 360],
+      ["Disciplina", 260],
+      ["Codigo", 110],
+      ["Nome", 400],
       ["Abertura", 170],
-      ["Informação da abertura", 260],
+      ["Informação da abertura", 240],
       ["Prazo", 170],
       ["Alerta", 190],
-      ["Concluida", 120],
-      ["Link", 140],
-      ["Descricao", 380],
-      ["Sugestão de resposta", 500],
+      ["Concluida", 110],
+      ["Link", 200],
+      ["Descricao", 360],
+      ["Sugestão de resposta", 360],
     ] as const;
     const hiddenColumns = ["Responsavel", "ID externo", "Origem", "Sincronizado em", "Situacao"];
     await request(`/views/${tableView.id}`, {
@@ -344,6 +349,9 @@ export async function setupNotion(
               return id ? [{ property_id: id, visible: false }] : [];
             }),
           ],
+          // Titulo, descricao e nome de disciplina sao longos demais para uma
+          // linha so; sem isto o Notion corta o texto na borda da coluna.
+          wrap_cells: true,
           frozen_column_index: 0,
         },
         filter: activeTasksFilter,
@@ -354,7 +362,7 @@ export async function setupNotion(
 
   const createView = async (
     name: string,
-    type: "board" | "calendar" | "list",
+    type: "board" | "calendar" | "list" | "table",
     extra: JsonObject = {},
   ) => {
     if (existingViewNames.has(name)) return;
@@ -416,7 +424,44 @@ export async function setupNotion(
     filter: activeTasksFilter,
     sorts: [{ property: "Prazo", direction: "ascending" }],
   });
-  await createView("Arquivadas", "list", {
+  // Tabela em vez de lista: a lista mostra so o titulo, e o que se quer aqui e
+  // cruzar disciplina, codigo, datas e situacao pelo menu de filtro do Notion.
+  const doneColumns = [
+    ["Disciplina", 260],
+    ["Codigo", 110],
+    ["Nome", 400],
+    ["Abertura", 170],
+    ["Prazo", 170],
+    ["Alerta", 190],
+    ["Situacao", 140],
+    ["Concluida", 110],
+    ["Link", 200],
+  ] as const;
+  const doneHiddenColumns = [
+    "Informação da abertura",
+    "Descricao",
+    "Sugestão de resposta",
+    "Responsavel",
+    "ID externo",
+    "Origem",
+    "Sincronizado em",
+  ];
+  await createView("Concluídas", "table", {
+    configuration: {
+      type: "table",
+      properties: [
+        ...doneColumns.flatMap(([name, width]) => {
+          const id = propertyId(name);
+          return id ? [{ property_id: id, visible: true, width }] : [];
+        }),
+        ...doneHiddenColumns.flatMap((name) => {
+          const id = propertyId(name);
+          return id ? [{ property_id: id, visible: false }] : [];
+        }),
+      ],
+      wrap_cells: true,
+      frozen_column_index: 0,
+    },
     filter: { property: "Concluida", checkbox: { equals: true } },
     sorts: [{ property: "Prazo", direction: "descending" }],
   });

@@ -4,6 +4,7 @@ import { loadNotionSetupConfig } from "./config.js";
 import { MoodleClient } from "./moodle/client.js";
 import { setupAttendancePanel } from "./notion/setup-attendance.js";
 import { parseNotionPageId } from "./notion/setup-notion.js";
+import { COURSE_CREDITS_2026_2 } from "./plans/semester-2026-2.js";
 
 async function main(): Promise<void> {
   const config = loadNotionSetupConfig();
@@ -20,7 +21,7 @@ async function main(): Promise<void> {
   const result = await setupAttendancePanel({
     token: config.notionToken,
     parentPageId: parseNotionPageId(config.notionParentPageUrl),
-    courses,
+    courses: courses.map((course) => ({ ...course, credits: COURSE_CREDITS_2026_2[course.code] })),
   });
   console.log(JSON.stringify({ ...result, courses: courses.length }));
 }

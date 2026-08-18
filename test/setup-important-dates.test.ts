@@ -55,8 +55,7 @@ test("registra apenas faltas planejadas ainda não aplicadas", async () => {
         properties: {
           Codigo: { rich_text: [{ plain_text: "GCC128" }] },
           "Ausências planejadas": { rich_text: [{ plain_text: "2026-10-13" }] },
-          "Falta 1": { checkbox: true },
-          ...Object.fromEntries(Array.from({ length: 7 }, (_, index) => [`Falta ${index + 2}`, { checkbox: false }])),
+          "Dias faltados": { number: 1 },
         },
       }] });
     }
@@ -77,9 +76,11 @@ test("registra apenas faltas planejadas ainda não aplicadas", async () => {
 
   assert.equal(updated, 1);
   const properties = object(pagePatch?.properties);
-  assert.deepEqual(properties?.["Falta 2"], { checkbox: true });
-  assert.deepEqual(properties?.["Falta 3"], { checkbox: true });
-  assert.equal(properties?.["Falta 4"], undefined);
+  // A data ja registrada nao conta de novo: 1 dia + as 2 datas novas.
+  assert.deepEqual(properties?.["Dias faltados"], { number: 3 });
+  assert.deepEqual(properties?.["Ausências planejadas"], {
+    rich_text: [{ text: { content: "2026-10-13, 2026-10-14, 2026-10-20" } }],
+  });
 });
 
 function object(value: unknown): Record<string, unknown> | undefined {

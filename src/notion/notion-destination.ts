@@ -115,6 +115,9 @@ function taskProperties(
     Disciplina: {
       select: task.course ? { name: notionSelectValue(task.course) } : null,
     },
+    Codigo: {
+      rich_text: task.courseCode ? [{ text: { content: task.courseCode } }] : [],
+    },
     Descricao: {
       rich_text: task.description ? [{ text: { content: task.description.slice(0, 2000) } }] : [],
     },

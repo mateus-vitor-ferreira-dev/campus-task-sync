@@ -18,6 +18,11 @@ function arrayValue(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
+function numberValue(property: unknown): number | undefined {
+  const value = objectValue(property)?.number;
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
 function richText(property: unknown): string {
   return arrayValue(objectValue(property)?.rich_text)
     .map((value) => objectValue(value)?.plain_text)
@@ -75,16 +80,13 @@ export async function markPlannedAbsences(options: Options): Promise<number> {
           .filter(Boolean),
       );
       const newDates = plan.dates.filter((date) => !recordedDates.has(date));
-      const availableCheckboxes = Array.from({ length: 8 }, (_, index) => `Falta ${index + 1}`)
-        .filter((name) => objectValue(properties?.[name])?.checkbox !== true);
-      if (availableCheckboxes.length < newDates.length) {
-        throw new Error(`Não há quadrados de falta suficientes para ${plan.courseName}.`);
-      }
-      newDates.forEach((date, index) => {
-        changes[availableCheckboxes[index]!] = { checkbox: true };
-        recordedDates.add(date);
-      });
       if (newDates.length > 0) {
+        // Uma data planejada e um dia de aula perdido. Quantas faltas isso
+        // custa e quanto sobra ate o limite ficam por conta das formulas do
+        // painel, que conhecem os creditos da disciplina.
+        const current = numberValue(properties?.["Dias faltados"]) ?? 0;
+        changes["Dias faltados"] = { number: current + newDates.length };
+        for (const date of newDates) recordedDates.add(date);
         changes["Ausências planejadas"] = {
           rich_text: [{ text: { content: [...recordedDates].sort().join(", ") } }],
         };

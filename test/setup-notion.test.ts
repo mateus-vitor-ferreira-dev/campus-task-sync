@@ -42,6 +42,8 @@ test("cria base com checkbox, cursos coloridos e visualizacoes", async () => {
           Descricao: { id: "description-property" },
           "Sugestão de resposta": { id: "answer-property" },
           Responsavel: { id: "assignee-property" },
+          Codigo: { id: "code-property" },
+          Situacao: { id: "status-property" },
         },
       });
     }
@@ -74,7 +76,7 @@ test("cria base com checkbox, cursos coloridos e visualizacoes", async () => {
   assert.equal(savedId, "source-1");
   assert.equal(savedAssigneeId, "user-1");
   assert.equal(result.created, true);
-  assert.deepEqual(result.viewsCreated, ["Por disciplina", "Calendario", "Pendentes", "Arquivadas"]);
+  assert.deepEqual(result.viewsCreated, ["Por disciplina", "Calendario", "Pendentes", "Concluídas"]);
 
   const createDatabase = requests.find(
     (request) => request.url.endsWith("/databases") && request.method === "POST",
@@ -118,13 +120,30 @@ test("cria base com checkbox, cursos coloridos e visualizacoes", async () => {
       { property: "Situacao", select: { does_not_equal: "Cancelada" } },
     ],
   });
-  const archived = requests.find(
-    (request) => request.url.endsWith("/views") && request.body?.name === "Arquivadas",
+  const done = requests.find(
+    (request) => request.url.endsWith("/views") && request.body?.name === "Concluídas",
   );
-  assert.deepEqual(archived?.body?.filter, {
+  assert.deepEqual(done?.body?.filter, {
     property: "Concluida",
     checkbox: { equals: true },
   });
+  // Tabela, e nao lista: e preciso ver e filtrar disciplina, codigo e datas.
+  assert.equal(done?.body?.type, "table");
+  const doneConfiguration = done?.body?.configuration as Record<string, unknown>;
+  assert.equal(doneConfiguration.wrap_cells, true);
+  const visible = (doneConfiguration.properties as Array<Record<string, unknown>>)
+    .filter((column) => column.visible === true)
+    .map((column) => column.property_id);
+  for (const id of [
+    "course-property",
+    "code-property",
+    "opening-property",
+    "deadline-property",
+    "alert-property",
+    "status-property",
+  ]) {
+    assert.ok(visible.includes(id), `${id} deveria estar visivel na view de concluidas`);
+  }
 });
 
 test("retoma uma configuracao parcial sem duplicar a base ou as visualizacoes", async () => {
@@ -162,7 +181,7 @@ test("retoma uma configuracao parcial sem duplicar a base ou as visualizacoes", 
   });
 
   assert.equal(result.created, false);
-  assert.deepEqual(result.viewsCreated, ["Calendario", "Pendentes", "Arquivadas"]);
+  assert.deepEqual(result.viewsCreated, ["Calendario", "Pendentes", "Concluídas"]);
   assert.equal(
     requests.filter((request) => request.url.endsWith("/databases") && request.method === "POST")
       .length,

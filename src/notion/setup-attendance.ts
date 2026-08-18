@@ -1,10 +1,27 @@
 const NOTION_API_VERSION = "2026-03-11";
 const DATABASE_TITLE = "Controle de Faltas";
-const ABSENCE_LIMIT = 8;
+
+/**
+ * Cada dia de aula perdido custa duas faltas: os encontros da UFLA tem duas
+ * horas-aula, e a chamada e por hora-aula.
+ */
+const LESSONS_PER_DAY = 2;
+
+/**
+ * Limite de 25% da carga horaria, que da quatro faltas por credito. Como o
+ * credito equivale a uma hora-aula semanal, uma disciplina de 2 creditos
+ * tolera 8 faltas (4 dias), uma de 4 creditos tolera 16 (8 dias) e uma de 6
+ * creditos tolera 24 (12 dias). Por isso o limite nao pode ser uma constante
+ * unica: ele so existe em funcao dos creditos de cada disciplina.
+ */
+const ABSENCES_PER_CREDIT = 4;
+
+/** Fracao do limite a partir da qual a disciplina entra em alerta laranja. */
+const WARNING_RATIO = 0.75;
 
 type JsonObject = Record<string, unknown>;
 
-export type AttendanceCourse = { code: string; name: string };
+export type AttendanceCourse = { code: string; name: string; credits?: number };
 
 type SetupAttendanceOptions = {
   token: string;
@@ -18,6 +35,8 @@ export type SetupAttendanceResult = {
   dataSourceId: string;
   created: boolean;
   coursesCreated: number;
+  /** Linhas que ja existiam e tiveram os creditos corrigidos. */
+  creditsUpdated: number;
 };
 
 function objectValue(value: unknown): JsonObject | undefined {
@@ -36,28 +55,33 @@ function titleValue(property: unknown): string | undefined {
   return value || undefined;
 }
 
-function formulaTotal(): string {
-  return Array.from(
-    { length: ABSENCE_LIMIT },
-    (_, index) => `toNumber(prop("Falta ${index + 1}"))`,
-  ).join(" + ");
+function numberValue(property: unknown): number | undefined {
+  const value = objectValue(property)?.number;
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function attendanceProperties(): JsonObject {
   return {
     Disciplina: { title: {} },
-    ...Object.fromEntries(
-      Array.from({ length: ABSENCE_LIMIT }, (_, index) => [
-        `Falta ${index + 1}`,
-        { checkbox: {} },
-      ]),
-    ),
-    Faltas: { formula: { expression: formulaTotal() } },
-    Restantes: { formula: { expression: `${ABSENCE_LIMIT} - prop("Faltas")` } },
+    "Créditos": { number: { format: "number" } },
+    "Dias faltados": { number: { format: "number" } },
+    Faltas: {
+      formula: {
+        expression: `if(empty(prop("Dias faltados")), 0, prop("Dias faltados") * ${LESSONS_PER_DAY})`,
+      },
+    },
+    Limite: {
+      formula: {
+        expression: `if(empty(prop("Créditos")), 0, prop("Créditos") * ${ABSENCES_PER_CREDIT})`,
+      },
+    },
+    Restantes: { formula: { expression: 'prop("Limite") - prop("Faltas")' } },
     Status: {
       formula: {
         expression:
-          'if(prop("Faltas") >= 8, "🔴 Limite atingido", if(prop("Faltas") >= 6, "🟠 Atenção", "🟢 Dentro do limite"))',
+          'if(empty(prop("Créditos")), "⚪ Informe os créditos", ' +
+          'if(prop("Faltas") >= prop("Limite"), "🔴 Limite atingido", ' +
+          `if(prop("Faltas") >= prop("Limite") * ${WARNING_RATIO}, "🟠 Atenção", "🟢 Dentro do limite")))`,
       },
     },
     "Ausências planejadas": { rich_text: {} },
@@ -117,7 +141,7 @@ export async function setupAttendancePanel(
             type: "text",
             text: {
               content:
-                "Marque um quadrado a cada dia de falta. O limite configurado é de 8 dias por disciplina.",
+                `Informe os créditos e anote quantos dias de aula você perdeu. Cada dia conta ${LESSONS_PER_DAY} faltas, e o limite é de ${ABSENCES_PER_CREDIT} faltas por crédito.`,
             },
           },
         ],
@@ -151,7 +175,7 @@ export async function setupAttendancePanel(
     });
   }
 
-  const existingCourses = new Set<string>();
+  const existingCourses = new Map<string, { id: string; credits?: number }>();
   cursor = undefined;
   do {
     const pages = await request(`/data_sources/${dataSourceId}/query`, {
@@ -159,16 +183,32 @@ export async function setupAttendancePanel(
       body: JSON.stringify({ ...(cursor ? { start_cursor: cursor } : {}) }),
     });
     for (const value of arrayValue(pages.results)) {
-      const properties = objectValue(objectValue(value)?.properties);
+      const page = objectValue(value);
+      const properties = objectValue(page?.properties);
       const name = titleValue(properties?.Disciplina);
-      if (name) existingCourses.add(name);
+      if (name && typeof page?.id === "string") {
+        existingCourses.set(name, { id: page.id, credits: numberValue(properties?.["Créditos"]) });
+      }
     }
     cursor = typeof pages.next_cursor === "string" ? pages.next_cursor : undefined;
   } while (cursor);
 
   let coursesCreated = 0;
+  let creditsUpdated = 0;
   for (const course of options.courses) {
-    if (existingCourses.has(course.name)) continue;
+    const existing = existingCourses.get(course.name);
+    if (existing) {
+      // Os creditos sao a unica coluna que o setup mantem: os dias faltados
+      // sao do aluno e nunca se sobrepoem.
+      if (course.credits !== undefined && course.credits !== existing.credits) {
+        await request(`/pages/${existing.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ properties: { "Créditos": { number: course.credits } } }),
+        });
+        creditsUpdated += 1;
+      }
+      continue;
+    }
     await request("/pages", {
       method: "POST",
       body: JSON.stringify({
@@ -176,12 +216,8 @@ export async function setupAttendancePanel(
         properties: {
           Disciplina: { title: [{ text: { content: course.name } }] },
           Codigo: { rich_text: [{ text: { content: course.code } }] },
-          ...Object.fromEntries(
-            Array.from({ length: ABSENCE_LIMIT }, (_, index) => [
-              `Falta ${index + 1}`,
-              { checkbox: false },
-            ]),
-          ),
+          ...(course.credits === undefined ? {} : { "Créditos": { number: course.credits } }),
+          "Dias faltados": { number: 0 },
         },
       }),
     });
@@ -201,16 +237,18 @@ export async function setupAttendancePanel(
       const id = objectValue(properties?.[name])?.id;
       return typeof id === "string" ? decodeURIComponent(id) : undefined;
     };
+    // As larguras acomodam o cabecalho, que e o piso real: "Dias faltados" e
+    // "Ausências planejadas" nao cabem em coluna estreita nem com a celula
+    // vazia. O conteudo em si quebra em varias linhas por causa de wrap_cells.
     const columns: Array<[string, number]> = [
-      ["Disciplina", 300],
-      ...Array.from({ length: ABSENCE_LIMIT }, (_, index) => [
-        `Falta ${index + 1}`,
-        80,
-      ] as [string, number]),
-      ["Faltas", 90],
-      ["Restantes", 100],
-      ["Status", 180],
-      ["Ausências planejadas", 340],
+      ["Disciplina", 320],
+      ["Créditos", 120],
+      ["Dias faltados", 140],
+      ["Faltas", 100],
+      ["Limite", 100],
+      ["Restantes", 120],
+      ["Status", 190],
+      ["Ausências planejadas", 260],
     ];
     const codeId = propertyId("Codigo");
     await request(`/views/${table.id}`, {
@@ -225,6 +263,8 @@ export async function setupAttendancePanel(
             }),
             ...(codeId ? [{ property_id: codeId, visible: false }] : []),
           ],
+          // Nome de disciplina nao cabe em uma linha; sem isto o Notion corta.
+          wrap_cells: true,
           frozen_column_index: 0,
         },
         sorts: [{ property: "Disciplina", direction: "ascending" }],
@@ -232,5 +272,5 @@ export async function setupAttendancePanel(
     });
   }
 
-  return { databaseId, dataSourceId, created, coursesCreated };
+  return { databaseId, dataSourceId, created, coursesCreated, creditsUpdated };
 }

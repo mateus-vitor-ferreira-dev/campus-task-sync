@@ -6,7 +6,7 @@ import { markPlannedAbsences } from "./notion/mark-planned-absences.js";
 import { setupAttendancePanel } from "./notion/setup-attendance.js";
 import { setupImportantDatesPanel } from "./notion/setup-important-dates.js";
 import { parseNotionPageId } from "./notion/setup-notion.js";
-import { IMPORTANT_DATES_2026_2, PLANNED_ABSENCES_2026_2, TRAVEL_PERIOD } from "./plans/semester-2026-2.js";
+import { COURSE_CREDITS_2026_2, IMPORTANT_DATES_2026_2, PLANNED_ABSENCES_2026_2, TRAVEL_PERIOD } from "./plans/semester-2026-2.js";
 
 async function main(): Promise<void> {
   const config = loadNotionSetupConfig();
@@ -17,7 +17,7 @@ async function main(): Promise<void> {
   const attendance = await setupAttendancePanel({
     token: config.notionToken,
     parentPageId,
-    courses,
+    courses: courses.map((course) => ({ ...course, credits: COURSE_CREDITS_2026_2[course.code] })),
   });
   const result = await setupImportantDatesPanel({
     token: config.notionToken,

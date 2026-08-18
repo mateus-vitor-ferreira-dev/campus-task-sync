@@ -169,9 +169,27 @@ execute:
 npm run setup:attendance
 ```
 
-O comando identifica as disciplinas do semestre e cria uma linha por matéria,
-com oito checkboxes, total de faltas, quantidade restante e alerta visual.
-Executá-lo novamente não duplica disciplinas.
+O comando identifica as disciplinas do semestre e cria uma linha por matéria.
+Você preenche duas colunas: **Créditos** e **Dias faltados**. O resto é fórmula.
+
+O limite é de 25% da carga horária, o que dá **4 faltas por crédito**, e cada
+dia de aula perdido custa **2 faltas** — os encontros têm duas horas-aula e a
+chamada é por hora-aula:
+
+| Créditos | Dias que pode faltar | Total de faltas |
+| --- | --- | --- |
+| 2 | 4 | 8 |
+| 4 | 8 | 16 |
+| 6 | 12 | 24 |
+
+O **Status** fica 🟢 dentro do limite, passa a 🟠 a partir de 75% das faltas
+permitidas e vira 🔴 ao atingir o limite. Enquanto os créditos estiverem em
+branco ele mostra ⚪, porque sem eles não há limite a calcular — o Moodle não
+publica os créditos em lugar nenhum, então esse número entra à mão no Notion ou
+em `COURSE_CREDITS_2026_2` (`src/plans/semester-2026-2.ts`).
+
+Executá-lo novamente não duplica disciplinas e não mexe nos dias faltados;
+apenas grava os créditos que estiverem no mapa acima.
 
 ## Datas importantes e planos de ensino
 
