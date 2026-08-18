@@ -76,7 +76,13 @@ test("cria base com checkbox, cursos coloridos e visualizacoes", async () => {
   assert.equal(savedId, "source-1");
   assert.equal(savedAssigneeId, "user-1");
   assert.equal(result.created, true);
-  assert.deepEqual(result.viewsCreated, ["Por disciplina", "Calendario", "Pendentes", "Concluídas"]);
+  assert.deepEqual(result.viewsCreated, [
+    "Por disciplina",
+    "Calendario",
+    "Pendentes",
+    "Concluídas",
+    "Canceladas",
+  ]);
 
   const createDatabase = requests.find(
     (request) => request.url.endsWith("/databases") && request.method === "POST",
@@ -181,7 +187,7 @@ test("retoma uma configuracao parcial sem duplicar a base ou as visualizacoes", 
   });
 
   assert.equal(result.created, false);
-  assert.deepEqual(result.viewsCreated, ["Calendario", "Pendentes", "Concluídas"]);
+  assert.deepEqual(result.viewsCreated, ["Calendario", "Pendentes", "Concluídas", "Canceladas"]);
   assert.equal(
     requests.filter((request) => request.url.endsWith("/databases") && request.method === "POST")
       .length,

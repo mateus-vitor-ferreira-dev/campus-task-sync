@@ -174,3 +174,25 @@ test("nao apaga uma abertura confirmada quando o calendario nao informa a data",
   assert.equal("Abertura" in properties, false);
   assert.equal("Informação da abertura" in properties, false);
 });
+
+test("cancelar marca a situacao em vez de apagar a linha", async () => {
+  const requests: CapturedRequest[] = [];
+  const fetcher: typeof fetch = async (input, init) => {
+    requests.push({ url: String(input), init });
+    return jsonResponse({ id: "page-1" });
+  };
+  const destination = new NotionDestination({
+    token: "token",
+    dataSourceId: "source-1",
+    fetcher,
+    now: () => new Date("2026-08-18T12:00:00.000Z"),
+  });
+
+  await destination.cancel("page-1");
+
+  const body = JSON.parse(String(requests[0]?.init?.body)) as Record<string, unknown>;
+  assert.equal(body.in_trash, undefined);
+  assert.deepEqual((body.properties as Record<string, unknown>).Situacao, {
+    select: { name: "Cancelada" },
+  });
+});

@@ -466,6 +466,28 @@ export async function setupNotion(
     sorts: [{ property: "Prazo", direction: "descending" }],
   });
 
+  // Uma tarefa cancelada nao aparece nas visoes ativas nem em "Concluidas"; sem
+  // esta aba ela existiria na base sem nenhum lugar onde ser vista.
+  await createView("Canceladas", "table", {
+    configuration: {
+      type: "table",
+      properties: [
+        ...doneColumns.flatMap(([name, width]) => {
+          const id = propertyId(name);
+          return id ? [{ property_id: id, visible: true, width }] : [];
+        }),
+        ...doneHiddenColumns.flatMap((name) => {
+          const id = propertyId(name);
+          return id ? [{ property_id: id, visible: false }] : [];
+        }),
+      ],
+      wrap_cells: true,
+      frozen_column_index: 0,
+    },
+    filter: { property: "Situacao", select: { equals: "Cancelada" } },
+    sorts: [{ property: "Prazo", direction: "descending" }],
+  });
+
   const users = await request("/users?page_size=100");
   const people = arrayValue(users.results)
     .map(objectValue)

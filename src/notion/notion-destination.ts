@@ -251,11 +251,22 @@ export class NotionDestination implements TaskDestination {
     });
   }
 
+  /**
+   * Marca a tarefa como cancelada em vez de manda-la para a lixeira. O evento
+   * costuma sumir do calendario so por ter saido da janela exportada, e a
+   * linha carrega descricao, sugestao de resposta e o que o usuario escreveu
+   * nela -- tudo isso ia junto para o lixo. As visoes ativas ja escondem
+   * "Cancelada", `statusFromNotion` le o estado de volta e `update` devolve a
+   * tarefa para "Pendente" se ela reaparecer no calendario.
+   */
   async cancel(destinationId: string): Promise<void> {
     await this.request(`/pages/${destinationId}`, {
       method: "PATCH",
       body: JSON.stringify({
-        in_trash: true,
+        properties: {
+          Situacao: { select: { name: "Cancelada" } },
+          "Sincronizado em": { date: { start: this.now().toISOString() } },
+        },
       }),
     });
   }
