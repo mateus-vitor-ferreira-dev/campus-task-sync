@@ -54,6 +54,18 @@ test("cria, atualiza e cancela tarefas de forma idempotente", async () => {
   assert.deepEqual(destination.calls, ["create:a", "update:page-b:b", "cancel:page-c"]);
 });
 
+test("nao cancela tarefa concluida que saiu do calendario", async () => {
+  const destination = new FakeDestination([
+    { destinationId: "page-done", externalId: "done", status: "completed", hasSuggestedAnswer: false },
+    { destinationId: "page-open", externalId: "open", status: "pending", hasSuggestedAnswer: false },
+  ]);
+
+  const result = await syncTasks([], destination);
+
+  assert.deepEqual(result, { created: 0, updated: 0, cancelled: 1 });
+  assert.deepEqual(destination.calls, ["cancel:page-open"]);
+});
+
 test("reaproveita uma fase existente e remove somente a duplicata", async () => {
   const destination = new FakeDestination([
     {

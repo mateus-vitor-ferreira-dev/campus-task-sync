@@ -62,7 +62,7 @@ export async function syncTasks(
     if (
       !incoming.has(externalId) &&
       !matchedDestinations.has(managed.destinationId) &&
-      managed.status !== "cancelled"
+      managed.status === "pending"
     ) {
       await destination.cancel(managed.destinationId);
       result.cancelled += 1;
