@@ -88,6 +88,7 @@ async function main(): Promise<void> {
       : undefined,
   });
   const result = await syncTasks(tasks, destination);
+  const restoredCompleted = await destination.restoreCompletedMarkedCancelled();
   const assessments = await syncAssessments(config, activities);
 
   console.log(
@@ -95,6 +96,7 @@ async function main(): Promise<void> {
       calendarTasks: tasks.length,
       moodleEnriched: enriched,
       ...result,
+      restoredCompleted,
       ...assessments,
     }),
   );

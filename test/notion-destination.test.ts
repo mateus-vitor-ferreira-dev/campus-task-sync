@@ -196,3 +196,39 @@ test("cancelar marca a situacao em vez de apagar a linha", async () => {
     select: { name: "Cancelada" },
   });
 });
+
+test("devolve para Pendente as tarefas concluidas marcadas como canceladas", async () => {
+  const requests: CapturedRequest[] = [];
+  const fetcher: typeof fetch = async (input, init) => {
+    requests.push({ url: String(input), init });
+    if (String(input).endsWith("/query")) {
+      return jsonResponse({
+        results: [
+          { id: "page-lixeira", in_trash: true, properties: {} },
+          { id: "page-1", properties: {} },
+        ],
+        next_cursor: null,
+      });
+    }
+    return jsonResponse({ id: "page-1" });
+  };
+  const destination = new NotionDestination({
+    token: "token",
+    dataSourceId: "source-1",
+    fetcher,
+  });
+
+  const restored = await destination.restoreCompletedMarkedCancelled();
+
+  assert.equal(restored, 1);
+  const query = JSON.parse(String(requests[0]?.init?.body)) as { filter: { and: unknown[] } };
+  assert.deepEqual(query.filter.and.slice(1), [
+    { property: "Concluida", checkbox: { equals: true } },
+    { property: "Situacao", select: { equals: "Cancelada" } },
+  ]);
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1]?.url, "https://api.notion.com/v1/pages/page-1");
+  assert.deepEqual(JSON.parse(String(requests[1]?.init?.body)), {
+    properties: { Situacao: { select: { name: "Pendente" } } },
+  });
+});

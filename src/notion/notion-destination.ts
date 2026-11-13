@@ -209,6 +209,51 @@ export class NotionDestination implements TaskDestination {
     return tasks;
   }
 
+  /**
+   * Devolve para "Pendente" as tarefas concluidas que ficaram com Situacao
+   * "Cancelada". Ate a v0.1.1 o sync cancelava tarefas concluidas que saiam do
+   * calendario, e com isso elas apareciam na visao de canceladas. A consulta
+   * volta vazia quando nao ha nada a corrigir.
+   */
+  async restoreCompletedMarkedCancelled(): Promise<number> {
+    const pageIds: string[] = [];
+    let cursor: string | undefined;
+
+    do {
+      const body = await this.request(`/data_sources/${this.options.dataSourceId}/query`, {
+        method: "POST",
+        body: JSON.stringify({
+          filter: {
+            and: [
+              { property: "Origem", select: { equals: SOURCE_NAME } },
+              { property: "Concluida", checkbox: { equals: true } },
+              { property: "Situacao", select: { equals: "Cancelada" } },
+            ],
+          },
+          ...(cursor ? { start_cursor: cursor } : {}),
+        }),
+      });
+
+      for (const result of arrayValue(body.results)) {
+        const page = objectValue(result);
+        if (page?.in_trash === true) continue;
+        if (typeof page?.id === "string") pageIds.push(page.id);
+      }
+      cursor = typeof body.next_cursor === "string" ? body.next_cursor : undefined;
+    } while (cursor);
+
+    for (const pageId of pageIds) {
+      await this.request(`/pages/${pageId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          properties: { Situacao: { select: { name: "Pendente" } } },
+        }),
+      });
+    }
+
+    return pageIds.length;
+  }
+
   async create(task: CampusTask): Promise<void> {
     const syncedAt = this.now().toISOString();
     const suggestedAnswer = await this.generateSuggestedAnswer(task);
